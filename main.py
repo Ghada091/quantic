@@ -123,7 +123,7 @@ def extract_links_from_text(self, data):
     text = str(data)
     
     # Regex patterns for different link types
-    link_pattern = r'https:\/\/router-link-pylfsebcoa-ew.a.run.app\/link\/v2\/(?P<shopid>[a-zA-Z0-9]+)\/.*'
+    link_pattern = r'https?:\/\/router-link[a-zA-Z0-9\-\.]+\/[a-zA-Z0-9\{\}\|\/\s\_]+'
 
     # Find all matches for images, redirection, and cart links
     links.extend(re.findall(link_pattern, text))
