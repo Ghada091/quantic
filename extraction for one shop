@@ -1,0 +1,98 @@
+from google.cloud import firestore
+import logging
+import re  
+import time
+from google.api_core.exceptions import DeadlineExceeded
+
+class FirestoreService:
+    def __init__(self):
+        # Initialize the Firestore client
+        print("Start init")
+        self.db = firestore.Client.from_service_account_json("khalilserviceaccount.json")   
+
+    def fetch_flows(self, shop_id):
+        flows_ref = self.db.collection("shops").document(shop_id).collection("klaviyo_flows")
+        flows = []
+
+        # Fetch flows directly
+        for attempt in range(3):
+            try:
+                fetched_flows = list(flows_ref.stream())
+                if not fetched_flows:  # Check if no more flows
+                    return flows  # Return the flows collected so far
+                flows.extend(fetched_flows)  # Append fetched flows
+                print(f"Fetched {len(fetched_flows)} flows for shop {shop_id}.")
+                return flows
+            except DeadlineExceeded:
+                print(f"Deadline exceeded while fetching flows for shop {shop_id}, retrying...")
+                time.sleep(2)
+        print(f"Failed to fetch flows for shop {shop_id} after 3 attempts.")
+        return flows  # Return the flows collected so far
+
+    def extract_links(self, shop_id):
+        print(f"Start Extract for shop: {shop_id}")
+        result = []
+
+        # Directly fetch flows for the specified shop ID
+        flows = self.fetch_flows(shop_id)
+
+        for flow in flows:
+            flow_data = flow.to_dict()
+            # Extract links from attributes
+            attributes = flow_data.get("attributes", {})
+            links = self.extract_links_from_text(attributes)
+            for link in links:
+                result.append((shop_id, "attribute", link))
+            print("list")
+            
+            # Extract links from actions
+            actions_ref = self.db.collection("shops").document(shop_id).collection("klaviyo_flows").document(flow.id).collection("actions")
+            for attempt in range(3):
+                try:
+                    actions = list(actions_ref.stream())
+                    if not actions:  # Check if no more actions
+                        print(f"No more actions for flow {flow.id}.")
+                        break  # Exit the actions loop
+                    print(f"Fetched actions for flow {flow.id}.")
+                    break
+                except DeadlineExceeded:
+                    print(f"Deadline exceeded while fetching actions for flow {flow.id}, retrying...")
+                    time.sleep(2)
+            else:
+                print(f"Failed to fetch actions for flow {flow.id} after 3 attempts.")
+                continue  # Skip to the next flow if fetching actions failed
+
+            # Process each action
+            for action in actions:
+                action_data = action.to_dict()
+                links = self.extract_links_from_text(action_data)
+                for link in links:
+                    result.append((shop_id, "action", link))
+
+        print("Finish extract")
+        return result
+
+    def extract_links_from_text(self, data):
+        links = []
+        text = str(data)
+        
+        # Regex pattern for extracting links
+        link_pattern = r'https?:\/\/router-link[a-zA-Z0-9\-\.]+\/[a-zA-Z0-9\{\}\|\/\s\_]+'
+        links.extend(re.findall(link_pattern, text))
+
+        return links
+
+# Usage
+if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO)
+    print("Start main")
+    firestore_service = FirestoreService()
+    print("Finish init firestore service")
+
+    # Specify the specific shop ID you want to target
+    target_shop_id = "465016mysh9F3A6156"  # Replace with your actual shop ID
+    print("Start extract links for target shop ID")
+    links = firestore_service.extract_links(target_shop_id)  # Pass the target ID to the method
+    print("Finish link extracts")
+    for shop_id, template, link in links:
+        print(f"Shop ID: {shop_id}, Template: {template}, Link: {link}")
