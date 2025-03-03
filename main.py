@@ -95,7 +95,7 @@ class FirestoreService:
 
             # Store links with shop_id and flow_id
             for link in links:
-                result.append((shop_id, flow_id, None, link))  # Removed template_id
+                result.append((shop_id, flow_id, None, link))  # Initial link without template_id
 
             actions_ref = self.db.collection("shops").document(shop_id).collection("klaviyo_flows").document(flow.id).collection("actions")
             actions = self.fetch_documents(actions_ref, batch_size)
@@ -103,12 +103,20 @@ class FirestoreService:
             for action in actions:
                 action_data = action.to_dict()
                 links = self.extract_links_from_text(action_data)
-                
-                # Extract action_template_id from action data
-                action_template_id = action_data.get('data', {}).get('message', {}).get('template', {}).get('templateID', "N/A")
+                action_id = action.id 
+                specific_action_ref = actions_ref.document(action_id)  # Reference to the specific action
 
+                # Fetch the specific action document
+                action_snapshot = specific_action_ref.get()
+                if action_snapshot.exists:
+                    action_template_id = action_snapshot.to_dict().get('data', {}).get('message', {}).get('template', {}).get('id', "N/A")
+                    print(action_template_id)
+                else:
+                    action_template_id = "N/A"  # Default if action doesn't exist
+
+                # Store links from action data with template_id
                 for link in links:
-                    result.append((shop_id, flow_id, action_template_id, link))  # Removed template_id
+                    result.append((shop_id, flow_id, action_template_id, link))
 
         return result
 
@@ -131,8 +139,8 @@ if __name__ == "__main__":
     print("Finish link extracts")
     
     if links:
-        df = pd.DataFrame(links, columns=['shop_id', 'flow_id', 'action_template_id', 'links'])  # Removed template_id
-        df.to_excel('lflow_links.xlsx', index=False)
-        print(f"Saved {len(links)} links to flow_links.xlsx")
+        df = pd.DataFrame(links, columns=['shop_id', 'flow_id', 'action_template_id', 'links'])
+        df.to_excel('tempflow_links.xlsx', index=False)
+        print(f"Saved {len(links)} links to l2flow_links.xlsx")
     else:
         print("No links found to save")
